@@ -26,7 +26,7 @@ type HaskObj = Int
 -- value constructors are one-to-one with types.
 (=->) :: a -> b -> (a -> b)
 a =-> b = \a' -> b
---a =-> b = \a' -> if a == a' then b else undefined
+--a =-> b = \a' -> i[a] == a' then b else undefined
 
 -- vertical composition
 (•) :: (a -> (ga -> ha)) -> (a -> (fa -> ga)) -> (a -> (fa -> ha))
@@ -36,22 +36,22 @@ a =-> b = \a' -> b
 -- they have type `a -> ([a] -> G a)`, and will be written -.>
 
 -- F, the Hask endofunctor.
-fObj :: (Functor f, Applicative f) => a -> f a
+fObj :: a -> [a]
 fObj = pure
 
-fArr :: (Functor f, Applicative f) => (a -> b) -> (f a -> f b)
+fArr :: (a -> b) -> ([a] -> [b])
 fArr = fmap
 
-f2Obj :: (Functor f, Applicative f) => a -> f (f a)
+f2Obj :: a -> [[a]]
 f2Obj = fObj . fObj
 
-f2Arr :: (Functor f, Applicative f) => (a -> b) -> (f (f a) -> f (f b))
+f2Arr :: (a -> b) -> ([[a]] -> [[b]])
 f2Arr = fArr . fArr
 
 -- the natural transformations
 
 -- µ : F^2 -.> F
-µ :: (Functor f, Applicative f) => a -> (f (f a) -> f a)
+µ :: a -> ([[a]] -> [a])
 µ a = (fObj . fObj $ a) =-> (fObj a)
 
 {-
@@ -75,15 +75,15 @@ testµ (x, y) = (µ y . f2Arr h $ [[x]]) == (fArr h . µ x $ [[x]])
         h :: HaskObj -> HaskObj
         h = x =-> y
 
-µf :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f (f a))
+µf :: a -> [[[a]]] -> [[a]]
 µf = µ . fObj
 
-fµ :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f (f a))
+fµ :: a -> [[[a]]] -> [[a]]
 fµ = fArr . µ
 
 -- law 1: µ • fµ = µ • µf
-µµf :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f a)
-µfµ :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f a)
+µµf :: a -> [[[a]]] -> [a]
+µfµ :: a -> [[[a]]] -> [a]
 µµf = µ • µf
 µfµ = µ • fµ
 
@@ -91,7 +91,7 @@ testLaw1 :: HaskObj -> Bool
 testLaw1 a = µµf a [[[a]]] == µfµ a [[[a]]]
 
 -- η : I -.> F
-η :: (Functor f, Applicative f) => a -> (a -> f a)
+η :: a -> (a -> [a])
 η a = a =-> fObj a
 
 {-
@@ -118,15 +118,15 @@ testη (x, y) = (η y . id h $ id x) == (fArr' h . η x $ id x)
         fArr' :: (a -> b) -> ([a] -> [b])
         fArr' = map
 
-fη :: (Functor f, Applicative f) => a -> f a -> f (f a)
+fη :: a -> [a] -> [[a]]
 fη = fArr . η
 
-ηf :: (Functor f, Applicative f) => a -> f a -> f (f a)
+ηf :: a -> [a] -> [[a]]
 ηf = η . fObj
 
 -- law 2: µηf = id_F = µfη
-µηf :: (Functor f, Applicative f) => a -> (f a -> f a)
-µfη :: (Functor f, Applicative f) => a -> (f a -> f a)
+µηf :: a -> ([a] -> [a])
+µfη :: a -> ([a] -> [a])
 µηf = µ • ηf
 µfη = µ • fη
 

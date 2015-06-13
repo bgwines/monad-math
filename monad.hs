@@ -1,7 +1,28 @@
+{-# LANGUAGE InstanceSigs #-}
 
 import Control.Applicative
 import Control.Monad
 import Test.QuickCheck
+import Test.QuickCheck.Arbitrary
+
+data HaskObj
+    = TypeA
+    | TypeB deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary HaskObj where
+    arbitrary :: Gen HaskObj
+    arbitrary = do
+        x <- choose (False, True)
+        return (if x == True then TypeA else TypeB)
+
+-- combinators
+
+-- builds a function from `a` to `b`. In our case, our values are of
+-- type HaskObj (or some number of lists wrapping that type), and each
+-- value of that type represents a type in the category Hask, so the
+-- value constructors are one-to-one with types.
+(=->) :: a -> b -> (a -> b)
+a =-> b = \a' -> b
 
 -- vertical composition
 (•) :: (a -> (ga -> ha)) -> (a -> (fa -> ga)) -> (a -> (fa -> ha))
@@ -11,55 +32,53 @@ import Test.QuickCheck
 -- they have type `a -> ([a] -> G a)`, and will be written -.>
 
 -- F, the Hask endofunctor.
-fObj :: (Eq a) => a -> [a]
+fObj :: (Functor f, Applicative f) => a -> f a
 fObj = pure
 
-fArr :: (Eq a) => (a -> b) -> ([a] -> [b])
+fArr :: (Functor f, Applicative f) => (a -> b) -> (f a -> f b)
 fArr = fmap
 
 -- the natural transformations
 
 -- µ : F^2 -.> F
-µ :: (Eq a) => a -> ([[a]] -> [a])
-µ _ = join
+µ :: (Functor f, Applicative f) => a -> (f (f a) -> f a)
+µ a = (fObj . fObj $ a) =-> (fObj a)
 
-µf :: (Eq a) => a -> ([[[a]]] -> [[a]])
+µf :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f (f a))
 µf = µ . fObj
 
-fµ :: (Eq a) => a -> ([[[a]]] -> [[a]])
+fµ :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f (f a))
 fµ = fArr . µ
 
 -- law 1: µ • fµ = µ • µf
-µµf :: (Eq a) => a -> ([[[a]]] -> [a])
-µfµ :: (Eq a) => a -> ([[[a]]] -> [a])
+µµf :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f a)
+µfµ :: (Functor f, Applicative f) => a -> (f (f (f a)) -> f a)
 µµf = µ • µf
 µfµ = µ • fµ
 
--- we use () because its values are 1:1 and onto with its type (objects
--- in the category Hask are types so we want the code to mirror that)
-testLaw1 :: [[[()]]] -> Bool
-testLaw1 a = µµf () a == µfµ () a
+testLaw1 :: HaskObj -> Bool
+testLaw1 a = µµf a [[[a]]] == µfµ a [[[a]]]
 
 -- η : I -.> F
-η :: (Eq a) => a -> (a -> [a])
-η _ = fObj
+η :: (Functor f, Applicative f) => a -> (a -> f a)
+η a = a =-> fObj a
 
-fη :: (Eq a) => a -> [a] -> [[a]]
+fη :: (Functor f, Applicative f) => a -> f a -> f (f a)
 fη = fArr . η
 
-ηf :: (Eq a) => a -> [a] -> [[a]]
+ηf :: (Functor f, Applicative f) => a -> f a -> f (f a)
 ηf = η . fObj
 
 -- law 2: µηf = id_F = µfη
-µηf :: (Eq a) => a -> ([a] -> [a])
-µfη :: (Eq a) => a -> ([a] -> [a])
+µηf :: (Functor f, Applicative f) => a -> (f a -> f a)
+µfη :: (Functor f, Applicative f) => a -> (f a -> f a)
 µηf = µ • ηf
 µfη = µ • fη
 
-testLaw2 :: [()] -> Bool
+testLaw2 :: HaskObj -> Bool
 testLaw2 a = and
-    [ id a == µfη () a
-    , id a == µηf () a ]
+    [ id [a] == µfη a [a]
+    , id [a] == µηf a [a] ]
     -- (transitively µfη = µηf)
 
 main :: IO ()

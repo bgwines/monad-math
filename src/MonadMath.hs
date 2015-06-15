@@ -1,16 +1,17 @@
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
+-- | A module exposing the structure of monads.
 module MonadMath
 (
 -- * data types
-  HaskObj(..)
+  Functor'(..)
 
 -- * combinators
 , (•)
-, (=->)
 
 -- * functors
+, iObj
+, iArr
 , fObj
 , fArr
 , f2Obj
@@ -36,86 +37,117 @@ module MonadMath
 import Control.Applicative
 import Control.Monad
 
--- TODO: positive
--- 0 represents Int
--- 1 represents [Int]
--- 2 represents [[Int]]
--- ...
-type HaskObj = Int
+-- A category-theoretic functor. Has both `pure` and `fmap`, and equality
+-- on liftings (trunctated here at depth three, the minimum necessary for
+-- monads).
+type Functor' f a = (Eq a, Applicative f, Eq (f a), Eq (f (f a)), Eq (f (f (f a))))
 
---instance Arbitrary (HaskObj -> HaskObj) where
---    arbitrary :: Gen HaskObj
---    arbitrary = do
---        x <- choose (False, True)
---        return (if x == True then TypeA else TypeB)
+-- | Builds a function from value `a' to value `b'. The returned
+-- function yields `undefined' when given anything other than the
+-- value `a`
+(=->) :: (Eq a) => a -> b -> (a -> b)
+a =-> b = \a' -> if a' == a then b else undefined
 
---instance (Applicative f) => Eq (f HaskObj) where
---    (==) :: f HaskObj -> f HaskObj -> Bool
---    fa == fb = liftA2 (==) fa fb == pure True
-
--- combinators
-
--- builds a function from `a` to `b`. In our case, our values are of
--- type HaskObj (or some number of lists wrapping that type), and each
--- value of that type represents a type in the category Hask, so the
--- value constructors are one-to-one with types.
-(=->) :: a -> b -> (a -> b)
-a =-> b = \a' -> b
---a =-> b = \a' -> i[a] == a' then b else undefined
-
--- vertical composition
+-- | Vertical composition of functions:
+--
+-- > µ • η = \a -> µ a . η a
 (•) :: (a -> (ga -> ha)) -> (a -> (fa -> ga)) -> (a -> (fa -> ha))
 µ • η = \a -> µ a . η a
 
--- natural transformations are composed vertically since
--- they have type `a -> ([a] -> G a)`, and will be written -.>
+-- | The identity functor on Hask as it behaves on objects.
+iObj :: a -> a
+iObj = id
 
--- F, the Hask endofunctor.
-fObj :: a -> [a]
+-- | The identity functor on Hask as it behaves on arrows.
+iArr :: (a -> b) -> (a -> b)
+iArr = id
+
+-- | F, a Hask endofunctor, as it behaves on objects.
+fObj :: (Applicative f) => a -> f a
 fObj = pure
 
-fArr :: (a -> b) -> ([a] -> [b])
+-- | F, a Hask endofunctor, as it behaves on arrows.
+fArr :: (Applicative f) => (a -> b) -> (f a -> f b)
 fArr = fmap
 
-f2Obj :: a -> [[a]]
+-- | F^2 = F . F, a Hask endofunctor, as it behaves on objects.
+f2Obj :: (Applicative f) => a -> f (f a)
 f2Obj = fObj . fObj
 
-f2Arr :: (a -> b) -> ([[a]] -> [[b]])
+-- | F^2 = F . F, a Hask endofunctor, as it behaves on arrows.
+f2Arr :: (Applicative f) => (a -> b) -> (f (f a) -> f (f b))
 f2Arr = fArr . fArr
 
--- the natural transformations
+-- natural transformations
 
---α :: 
-
--- µ : F^2 -.> F
-µ :: a -> ([[a]] -> [a])
+-- |
+-- >          .
+-- >  µ : F^2 -> F, a natural transformation
+-- >  h : x -> y, a function
+-- >  F : x -> F x, an endofunctor in the category Hask.
+-- >  F2 : x -> F F x, an endofunctor in the category Hask.
+-- > 
+-- >       F2 h
+-- >  F2 x ----> F2 y
+-- >  |          |
+-- >  | µ x      | µ y
+-- >  |          |
+-- >  v          v
+-- >  F x -----> F y
+-- >       F h
+µ :: (Eq a, Applicative f, Eq (f a), Eq (f (f a))) => a -> (f (f a) -> f a)
 µ a = (fObj . fObj $ a) =-> (fObj a)
 
-µf :: a -> [[[a]]] -> [[a]]
+-- |
+-- >        .
+-- >  η : I -> F, a natural transformation
+-- >  h : x -> y, a function
+-- >  I : x -> x, the identity endofunctor in the category Hask.
+-- >  F : x -> F x, an endofunctor in the category Hask.
+-- > 
+-- >       I h
+-- >  I x ----> I y
+-- >  |          |
+-- >  | η x      | η y
+-- >  |          |
+-- >  v          v
+-- >  F x -----> F y
+-- >       F h
+η :: (Eq a, Applicative f) => a -> (a -> f a)
+η a = iObj a =-> fObj a
+
+-- * compositions of natural transformations and functors
+
+-- | The natural transformation formed by composition of µ with F.
+µf :: Functor' f a => a -> (f (f (f a)) -> f (f a))
 µf = µ . fObj
 
-fµ :: a -> [[[a]]] -> [[a]]
+-- | The natural transformation formed by composition of F with µ.
+fµ :: Functor' f a => a -> (f (f (f a)) -> f (f a))
 fµ = fArr . µ
 
--- law 1: µ • fµ = µ • µf
-µµf :: a -> [[[a]]] -> [a]
-µfµ :: a -> [[[a]]] -> [a]
-µµf = µ • µf
-µfµ = µ • fµ
-
--- η : I -.> F
-η :: a -> (a -> [a])
-η a = a =-> fObj a
-
-fη :: a -> [a] -> [[a]]
+-- | The natural transformation formed by composition of F with η.
+fη :: Functor' f a => a -> (f a -> f (f a))
 fη = fArr . η
 
-ηf :: a -> [a] -> [[a]]
+-- | The natural transformation formed by composition of η with F.
+ηf :: Functor' f a => a -> (f a -> f (f a))
 ηf = η . fObj
 
--- law 2: µηf = id_F = µfη
-µηf :: a -> ([a] -> [a])
-µfη :: a -> ([a] -> [a])
-µηf = µ • ηf
-µfη = µ • fη
+-- * compositions of natural transformations and natural transformations
 
+-- | The natural transformation formed by composition of µ with µf.
+µµf :: Functor' f a => a -> (f (f (f a)) -> f a)
+µµf = µ • µf
+
+-- | The natural transformation formed by composition of µ with fµ.
+µfµ :: Functor' f a => a -> (f (f (f a)) -> f a)
+µfµ = µ • fµ
+
+-- | The natural transformation formed by composition of µ with ηf.
+µηf :: Functor' f a => a -> (f a -> f a)
+µηf = µ • ηf
+
+-- | The natural transformation formed by composition of µ with fη.
+µfη :: Functor' f a => a -> (f a -> f a)
+µfη = µ • fη

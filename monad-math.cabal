@@ -6,8 +6,6 @@ version:             0.1.0.0
 synopsis:            Coding up the monad laws from a category-theoretic perspective!
 -- description:         
 homepage:            https://github.com/bgwines/monad-math
-license:             BSD3
-license-file:        LICENSE
 author:              Brett Wines
 maintainer:          brettwines@gmail.com
 -- copyright:           

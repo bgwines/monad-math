@@ -1,4 +1,7 @@
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main (main) where
 
@@ -9,12 +12,12 @@ import Test.QuickCheck.Arbitrary
 import MonadMath
 
 -- | A sum type representing objects in the category Hask. Objects
--- in Hask are Haskell types, so any value of type 'HaskellValue' is supposed
+-- in Hask are Haskell types, so any value of type 'HV' is supposed
 -- to represent a Haskell type. One way wonder, then, why under this
 -- data type definition we can have multiple values constructed with the
 -- same data constructor, instead of something like
 --
--- > data HaskellValue = A | B | C -- 'A' represents Int, 'B' represents String, 'C' represents (Char, [Bool]), etc.
+-- > data HV = A | B | C -- 'A' represents Int, 'B' represents String, 'C' represents (Char, [Bool]), etc.
 --
 -- . This is because it is useful to consider different Haskell values
 -- of the same type -- we still have the type information, accessible
@@ -29,8 +32,18 @@ data HaskellValue
   | E (Either (Bool, Char, [Bool]) [Maybe (Maybe Int)])
   deriving (Show, Eq)
 
-instance Arbitrary HaskellValue where
-    arbitrary :: Gen HaskellValue
+type HV = HaskellValue
+
+iObj :: a -> a
+iObj = id
+
+iArr :: (a -> b) -> (a -> b)
+iArr = id
+
+type MonadImpl m = (Monad' m, Eq (m HV)) => (HV -> HV) -> (m HV -> m HV)
+
+instance Arbitrary HV where
+    arbitrary :: Gen HV
     arbitrary = do
         valueConstructor <- choose ('A', 'E')
 
@@ -48,16 +61,30 @@ instance Arbitrary HaskellValue where
             'E' -> E e;
         }
 
-instance CoArbitrary HaskellValue where
-    coarbitrary :: HaskellValue -> Gen b -> Gen b
+-- limit list sizes to make test cases not run forever
+instance Arbitrary HV => Arbitrary [HV] where
+    arbitrary = sized $ \_ ->
+        do
+            k <- choose ((0, 10) :: (Int, Int))
+            sequence [ arbitrary | _ <- [1..k] ]
+
+-- limit list sizes to make test cases not run forever
+instance Arbitrary [HV] => Arbitrary [[HV]] where
+    arbitrary = sized $ \_ ->
+        do
+            k <- choose ((0, 10) :: (Int, Int))
+            sequence [ arbitrary | _ <- [1..k] ]
+
+instance CoArbitrary HV where
+    coarbitrary :: HV -> Gen b -> Gen b
     coarbitrary (A a) = variant 0 . coarbitrary a
     coarbitrary (B b) = variant 1 . coarbitrary b
     coarbitrary (C c) = variant 2 . coarbitrary c
     coarbitrary (D d) = variant 3 . coarbitrary d
     coarbitrary (E e) = variant 4 . coarbitrary e
 
-instance Function HaskellValue where
-    --function :: (HaskellValue -> b) -> HaskellValue :-> b
+instance Function HV where
+    --function :: (HV -> b) -> HV :-> b
     function = functionMap g h
         where
             g (A a) = (Just a , Nothing, Nothing, Nothing, Nothing)
@@ -87,13 +114,10 @@ instance Function HaskellValue where
 -- >  v          v
 -- >  F x -----> F y
 -- >       F h
-testη :: Fun HaskellValue HaskellValue -> [HaskellValue] -> Bool
-testη (Fun _ h) = all
+testη :: (Monad' m, Eq (m HV)) => MonadImpl m -> Fun HV HV -> [HV] -> Bool
+testη fArr' (Fun _ h) = all
     (\x -> let y = h x in
         (η y . iArr h $ iObj x) == (fArr' h . η x $ iObj x))
-    where
-        fArr' :: (a -> b) -> ([a] -> [b])
-        fArr' = map
 
 -- |
 -- >          .
@@ -111,25 +135,50 @@ testη (Fun _ h) = all
 -- >  v          v
 -- >  F x -----> F y
 -- >       F h
-testµ :: Fun HaskellValue HaskellValue -> [HaskellValue] -> Bool
-testµ (Fun _ h) = all
-    (\x -> let y = h x in
-        (µ y . f2Arr h $ [[x]]) == (fArr h . µ x $ [[x]]))
+testµ
+    :: (Monad' m, Eq (m HV))
+    => MonadImpl m
+    -> Fun HV HV
+    -> [m (m HV)]
+    -> Bool
+testµ _ (Fun _ h) = all
+    (\mma ->
+        (µ undefined . f2Arr h $ mma) == (fArr h . µ undefined $ mma))
 
 -- | Tests the first monad law: µµf = µfµ
-testLaw1 :: HaskellValue -> Bool
-testLaw1 a = µµf a [[[a]]] == µfµ a [[[a]]]
+testLaw1 :: (Monad' m, Eq (m HV)) => MonadImpl m -> m (m (m HV)) -> Bool
+testLaw1 _ mmma = µµf undefined mmma == µfµ undefined mmma
 
 -- | Tests the second monad law: µfη = id_F = µηf
-testLaw2 :: HaskellValue -> Bool
-testLaw2 a = and
-    [ iObj [a] == µfη a [a]
-    , iObj [a] == µηf a [a] ]
+testLaw2 :: (Monad' m, Eq (m HV)) => MonadImpl m -> m HV -> Bool
+testLaw2 _ ma = and
+    [ iObj ma == µfη undefined ma
+    , iObj ma == µηf undefined ma ]
     -- (transitively µfη = µηf)
+
+testMonad ::
+    ( Monad' m
+    , Arbitrary (m HV)
+    , Arbitrary (m (m HV))
+    , Arbitrary (m (m (m HV)))
+    , Show (m HV)
+    , Show (m (m HV))
+    , Show (m (m (m HV)))
+    , Eq (m HV) )
+    => MonadImpl m -> IO ()
+testMonad monadImpl = do
+    quickCheckWith stdArgs { maxSuccess = 25 } (testµ monadImpl)
+    quickCheckWith stdArgs { maxSuccess = 25 } (testη monadImpl)
+    quickCheckWith stdArgs { maxSuccess = 25 } (testLaw1 monadImpl)
+    quickCheckWith stdArgs { maxSuccess = 25 } (testLaw2 monadImpl)
+
+listImpl :: MonadImpl []
+listImpl = fmap
+
+maybeImpl :: MonadImpl Maybe
+maybeImpl = fmap
 
 main :: IO ()
 main = do
-    quickCheckWith stdArgs { maxSuccess = 500 } testµ
-    quickCheckWith stdArgs { maxSuccess = 500 } testη
-    quickCheckWith stdArgs { maxSuccess = 500 } testLaw1
-    quickCheckWith stdArgs { maxSuccess = 500 } testLaw2
+    testMonad listImpl
+    testMonad maybeImpl

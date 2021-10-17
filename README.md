@@ -1,5 +1,7 @@
 # monad-math
-Coding up the monad laws from a category-theoretic perspective!
+Coding up the monad laws from a category-theoretic perspective
+
+https://medium.com/@brettwines/implementing-a-category-theoretic-hask-monad-in-haskell-7bf662f2e98b
 
 `MonadMath.hs` exposes the three components of a monad: the functor `F` and the natural transformations `µ` and `η`.
 `test-monadmath.hs` contains tests of naturality (`µ y . F h = F h . µ x` and `η y . I h = F h . η x`) and monad law tests (`µµf = µfµ` and `µfη = I_F = µηf`).
